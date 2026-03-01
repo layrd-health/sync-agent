@@ -30,7 +30,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-Name: "autostart"; Description: "Start automatically when I log in"; GroupDescription: "Other:"; Flags: checked
+Name: "autostart"; Description: "Start automatically when I log in"; GroupDescription: "Other:"
 
 [Files]
 Source: "dist\LayrdSync.exe"; DestDir: "{app}"; Flags: ignoreversion
