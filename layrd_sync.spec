@@ -2,13 +2,13 @@
 # Build with: pyinstaller layrd_sync.spec
 
 a = Analysis(
-    ['layrd_sync/main.py'],
+    ['launcher.py'],
     pathex=[],
     binaries=[],
     datas=[],
     hiddenimports=[
-        'pystray._win32',   # Windows tray backend
-        'pystray._darwin',  # macOS tray backend (for dev)
+        'pystray._win32',
+        'pystray._darwin',
     ],
     hookspath=[],
     hooksconfig={},
@@ -30,6 +30,6 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=False,  # No console window — runs as tray app
+    console=True,
     icon=None,      # TODO: add icon.ico
 )
