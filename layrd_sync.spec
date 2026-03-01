@@ -1,5 +1,10 @@
 # PyInstaller spec for Layrd Sync Agent
 # Build with: pyinstaller layrd_sync.spec
+# Produces two executables: LayrdSync.exe (release, no console) and LayrdSyncDebug.exe (with console)
+
+import os
+
+block_cipher = None
 
 a = Analysis(
     ['launcher.py'],
@@ -17,9 +22,10 @@ a = Analysis(
     noarchive=False,
 )
 
-pyz = PYZ(a.pure)
+pyz = PYZ(a.pure, cipher=block_cipher)
 
-exe = EXE(
+# Release build — no console window, runs silently in the tray
+exe_release = EXE(
     pyz,
     a.scripts,
     a.binaries,
@@ -30,6 +36,22 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
+    console=False,
+    icon=None,
+)
+
+# Debug build — console window visible for troubleshooting
+exe_debug = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.datas,
+    [],
+    name='LayrdSyncDebug',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
     console=True,
-    icon=None,      # TODO: add icon.ico
+    icon=None,
 )

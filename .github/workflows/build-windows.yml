@@ -17,18 +17,39 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev
 
-      - name: Build executable
+      - name: Build executables (release + debug)
         run: uv run pyinstaller layrd_sync.spec
 
-      - name: Upload artifact
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+
+      - name: Build installer
+        run: iscc installer.iss
+
+      - name: Upload release exe
         uses: actions/upload-artifact@v4
         with:
           name: LayrdSync-windows
           path: dist/LayrdSync.exe
 
+      - name: Upload debug exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: LayrdSyncDebug-windows
+          path: dist/LayrdSyncDebug.exe
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: LayrdSyncSetup
+          path: installer_output/LayrdSyncSetup-*.exe
+
       - name: Create release (on tag)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/LayrdSync.exe
+          files: |
+            dist/LayrdSync.exe
+            dist/LayrdSyncDebug.exe
+            installer_output/LayrdSyncSetup-*.exe
           generate_release_notes: true

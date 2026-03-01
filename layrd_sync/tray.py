@@ -104,6 +104,7 @@ class TrayApp:
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Sync Now", self._on_sync_now),
             pystray.MenuItem("Check for Updates", self._on_check_update),
+            pystray.MenuItem("Settings…", self._on_settings),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quit", self._on_quit),
         )
@@ -142,6 +143,18 @@ class TrayApp:
         else:
             if self._icon:
                 self._icon.notify("You're running the latest version.", "No Updates")
+
+    def _on_settings(self, icon, item):
+        thread = threading.Thread(target=self._run_settings, daemon=True)
+        thread.start()
+
+    def _run_settings(self):
+        from .setup_wizard import SetupWizard
+        wizard = SetupWizard(self.db)
+        if wizard.run():
+            self._update_menu()
+            if self._icon:
+                self._icon.notify("Settings saved. Restart to apply folder changes.", "Settings Updated")
 
     def _on_quit(self, icon, item):
         logger.info("User requested quit")

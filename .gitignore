@@ -8,6 +8,7 @@ build/
 *.sqlite
 .env
 test_faxes/
+installer_output/
 
 # uv
 uv.lock

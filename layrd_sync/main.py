@@ -29,15 +29,28 @@ def setup_logging(verbose: bool = False):
     )
 
 
+def _needs_setup(db: Database) -> bool:
+    """Check if first-run setup is needed."""
+    return db.get_config("setup_complete") != "true"
+
+
+def _run_setup(db: Database) -> bool:
+    """Launch the setup wizard. Returns True if completed."""
+    from .setup_wizard import SetupWizard
+    wizard = SetupWizard(db)
+    return wizard.run()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Layrd Document Sync Agent")
     parser.add_argument("--verbose", "-v", action="store_true", help="Debug logging")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("--headless", action="store_true", help="Run without system tray (for testing)")
+    parser.add_argument("--setup", action="store_true", help="Force the setup wizard to run")
     parser.add_argument("--add-folder", nargs=2, metavar=("PATH", "LABEL"),
                         help="Add a watched folder (e.g. --add-folder Z:\\ fax)")
-    parser.add_argument("--api-url", default="http://localhost:8000",
-                        help="Layrd backend URL (default: http://localhost:8000)")
+    parser.add_argument("--api-url", default=None,
+                        help="Layrd backend URL (overrides saved config)")
     parser.add_argument("--api-key", default=None, help="API key for authentication")
     parser.add_argument("--poll-interval", type=int, default=DEFAULT_POLL_INTERVAL,
                         help=f"Seconds between scans (default: {DEFAULT_POLL_INTERVAL})")
@@ -48,26 +61,43 @@ def main():
     db = Database()
     logger.info("Database at %s", db.db_path)
 
+    # CLI folder management
     if args.add_folder:
         path, label = args.add_folder
         folder = db.add_folder(path, label, args.poll_interval)
         logger.info("Added watched folder: %s (%s)", folder.path, folder.label)
         print(f"Added: {folder.label} → {folder.path} (poll every {folder.poll_interval_seconds}s)")
+        db.set_config("setup_complete", "true")
         db.close()
         return
 
-    uploader = Uploader(base_url=args.api_url, api_key=args.api_key)
+    # First-run setup wizard
+    if args.setup or _needs_setup(db):
+        logger.info("Launching setup wizard")
+        if not _run_setup(db):
+            logger.info("Setup cancelled, exiting")
+            db.close()
+            return
+
+    # Resolve API URL: CLI arg > saved config > default
+    api_url = args.api_url or db.get_config("api_url", "http://localhost:8000")
+    api_key = args.api_key or db.get_config("api_key")
+
+    uploader = Uploader(base_url=api_url, api_key=api_key)
     engine = SyncEngine(db=db, uploader=uploader)
-    updater = Updater(update_url=args.api_url)
+    updater = Updater(update_url=api_url)
 
     folders = db.get_folders(enabled_only=True)
     if not folders:
-        logger.warning("No watched folders configured. Use --add-folder PATH LABEL to add one.")
-        print("No watched folders configured.")
-        print("  Example: layrd-sync --add-folder Z:\\ fax")
-        print("  Example: layrd-sync --add-folder Y:\\ scan")
-        db.close()
-        return
+        logger.warning("No watched folders configured.")
+        if not _run_setup(db):
+            db.close()
+            return
+        folders = db.get_folders(enabled_only=True)
+        if not folders:
+            logger.error("Still no folders configured, exiting")
+            db.close()
+            return
 
     for f in folders:
         logger.info("Watching: %s → %s (every %ds)", f.label, f.path, f.poll_interval_seconds)
@@ -81,7 +111,7 @@ def main():
         max_instances=1,
     )
     scheduler.add_job(
-        lambda: updater.check_for_update(),
+        lambda: _check_and_apply_update(updater),
         "interval",
         seconds=DEFAULT_UPDATE_CHECK_INTERVAL,
         id="update_check",
@@ -114,6 +144,16 @@ def main():
     uploader.close()
     updater.close()
     db.close()
+
+
+def _check_and_apply_update(updater: Updater):
+    """Check for updates and auto-apply if available."""
+    info = updater.check_for_update()
+    if info:
+        logger.info("Downloading update v%s...", info.get("version"))
+        if updater.download_and_apply(info):
+            logger.info("Update applied, exiting for restart")
+            sys.exit(0)
 
 
 def _wait_forever():
