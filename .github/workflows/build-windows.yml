@@ -44,6 +44,24 @@ jobs:
           name: LayrdSyncSetup
           path: installer_output/LayrdSyncSetup-*.exe
 
+      - name: Compute SHA-256 hashes
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $exe_hash = (Get-FileHash dist/LayrdSync.exe -Algorithm SHA256).Hash.ToLower()
+          $setup_file = Get-ChildItem installer_output/LayrdSyncSetup-*.exe | Select-Object -First 1
+          $setup_hash = (Get-FileHash $setup_file.FullName -Algorithm SHA256).Hash.ToLower()
+          $body = @"
+          ## SHA-256 Checksums
+          ``````
+          LayrdSync.exe: $exe_hash
+          $($setup_file.Name): $setup_hash
+          ``````
+          "@
+          echo "RELEASE_BODY<<EOF" >> $env:GITHUB_ENV
+          echo $body >> $env:GITHUB_ENV
+          echo "EOF" >> $env:GITHUB_ENV
+
       - name: Create release (on tag)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
@@ -53,3 +71,4 @@ jobs:
             dist/LayrdSyncDebug.exe
             installer_output/LayrdSyncSetup-*.exe
           generate_release_notes: true
+          body: ${{ env.RELEASE_BODY }}

@@ -37,11 +37,13 @@ else:
 
 
 def _render_logo_image(size: int = 48) -> Image.Image:
-    """Render the Layrd logo at the given pixel size."""
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    """Render the Layrd logo at the given pixel size with 4x supersampling."""
+    ss = 4
+    big = size * ss
+    img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    padding = int(size * 0.05)
-    logo_size = size - 2 * padding
+    padding = int(big * 0.05)
+    logo_size = big - 2 * padding
     vb_x, vb_y, vb_w = 70, 70, 160
     s = logo_size / vb_w
     dark, light = ACCENT, ACCENT_LIGHT
@@ -62,7 +64,7 @@ def _render_logo_image(size: int = 48) -> Image.Image:
         y1 = y0 + rh * s
         r = rr * s
         draw.rounded_rectangle([x0, y0, x1, y1], radius=r, fill=fill)
-    return img
+    return img.resize((size, size), Image.LANCZOS)
 
 
 def _apply_modern_style(root: tk.Tk):
@@ -87,9 +89,10 @@ def _apply_modern_style(root: tk.Tk):
 
     style.configure("Accent.TButton", font=("Segoe UI", 10, "bold"),
                     background=ACCENT, foreground="#ffffff",
-                    borderwidth=0, padding=(16, 8))
+                    borderwidth=0, padding=(16, 8), focuscolor="")
     style.map("Accent.TButton",
-              background=[("active", ACCENT_HOVER), ("pressed", ACCENT_HOVER)])
+              background=[("active", ACCENT_HOVER), ("pressed", ACCENT_HOVER)],
+              foreground=[("active", "#ffffff"), ("pressed", "#ffffff")])
 
     style.configure("Flat.TButton", font=("Segoe UI", 9),
                     background=CARD_BG, foreground=TEXT_PRIMARY,
@@ -234,12 +237,17 @@ class SetupWizard:
                 variable=self.autostart_var, style="Card.TCheckbutton",
             ).pack(anchor=tk.W, pady=(4, 0))
 
-        # Footer with save button
+        # Footer with save button (tk.Button for reliable foreground color on Windows)
         footer = ttk.Frame(outer, style="BG.TFrame")
         footer.pack(fill=tk.X, pady=(16, 0))
 
-        ttk.Button(footer, text="Save & Start", command=self._save,
-                   style="Accent.TButton").pack(side=tk.RIGHT)
+        save_btn = tk.Button(
+            footer, text="Save & Start", command=self._save,
+            font=("Segoe UI", 10, "bold"), bg=ACCENT, fg="#ffffff",
+            activebackground=ACCENT_HOVER, activeforeground="#ffffff",
+            bd=0, padx=20, pady=8, cursor="hand2", relief="flat",
+        )
+        save_btn.pack(side=tk.RIGHT)
 
     def _add_folder(self):
         path = filedialog.askdirectory(title="Select a folder to watch")

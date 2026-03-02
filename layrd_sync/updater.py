@@ -1,21 +1,21 @@
-"""Self-updater — checks for new versions and applies updates.
+"""Self-updater — checks GitHub Releases for new versions and applies updates.
 
 Flow:
-1. GET {update_url}/api/sync-agent/version → { "version": "0.2.0", "download_url": "...", "sha256": "..." }
-2. If newer than current, download to temp dir
-3. Verify SHA-256
-4. On Windows: write a batch script that waits for this process to exit, replaces
-   the exe, and relaunches. Then exit.
-5. On other platforms: launch the new binary and exit.
+1. GET https://api.github.com/repos/{owner}/{repo}/releases/latest
+2. Parse version tag, compare to current
+3. Download the LayrdSync.exe asset from the release
+4. Verify SHA-256 if provided in release body
+5. On Windows: write a batch script that waits for this process to exit,
+   replaces the exe, and relaunches. Then exit.
 """
 
 import logging
 import hashlib
+import re
 import sys
 import os
 import tempfile
 import subprocess
-import time
 from pathlib import Path
 
 import httpx
@@ -24,30 +24,75 @@ from . import __version__
 
 logger = logging.getLogger(__name__)
 
+GITHUB_REPO = "layrd-health/sync-agent"
+GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+ASSET_NAME = "LayrdSync.exe"
+
 
 def _version_tuple(v: str) -> tuple[int, ...]:
-    return tuple(int(x) for x in v.strip().split("."))
+    clean = v.lstrip("vV").strip()
+    return tuple(int(x) for x in clean.split("."))
+
+
+def _extract_sha256(body: str | None, asset_name: str) -> str | None:
+    """Try to extract a SHA-256 hash from the release body for a given asset."""
+    if not body:
+        return None
+    for line in body.splitlines():
+        if asset_name in line:
+            match = re.search(r"[a-f0-9]{64}", line, re.IGNORECASE)
+            if match:
+                return match.group(0).lower()
+    match = re.search(r"sha256[:\s]+([a-f0-9]{64})", body, re.IGNORECASE)
+    if match:
+        return match.group(1).lower()
+    return None
 
 
 class Updater:
-    def __init__(self, update_url: str):
-        self.update_url = update_url.rstrip("/")
-        self._client = httpx.Client(timeout=60)
+    def __init__(self, update_url: str | None = None):
+        self._update_url = update_url
+        self._client = httpx.Client(
+            timeout=120,
+            headers={"Accept": "application/vnd.github+json"},
+            follow_redirects=True,
+        )
 
     def check_for_update(self) -> dict | None:
-        """Returns update info dict if a newer version is available, else None."""
+        """Check GitHub Releases for a newer version. Returns info dict or None."""
         try:
-            resp = self._client.get(f"{self.update_url}/api/sync-agent/version")
+            resp = self._client.get(GITHUB_API)
             resp.raise_for_status()
-            info = resp.json()
+            release = resp.json()
 
-            remote_version = info.get("version", "0.0.0")
-            if _version_tuple(remote_version) > _version_tuple(__version__):
-                logger.info("Update available: %s → %s", __version__, remote_version)
-                return info
-            else:
-                logger.debug("Up to date (current=%s, remote=%s)", __version__, remote_version)
+            tag = release.get("tag_name", "v0.0.0")
+            remote_version = _version_tuple(tag)
+            current_version = _version_tuple(__version__)
+
+            if remote_version <= current_version:
+                logger.debug("Up to date (current=%s, latest=%s)", __version__, tag)
                 return None
+
+            assets = release.get("assets", [])
+            download_url = None
+            for asset in assets:
+                if asset.get("name") == ASSET_NAME:
+                    download_url = asset.get("browser_download_url")
+                    break
+
+            if not download_url:
+                logger.warning("Release %s has no %s asset", tag, ASSET_NAME)
+                return None
+
+            expected_hash = _extract_sha256(release.get("body"), ASSET_NAME)
+
+            logger.info("Update available: %s -> %s", __version__, tag)
+            return {
+                "version": tag.lstrip("vV"),
+                "download_url": download_url,
+                "sha256": expected_hash,
+                "release_url": release.get("html_url"),
+            }
 
         except Exception as e:
             logger.warning("Update check failed: %s", e)
@@ -65,8 +110,7 @@ class Updater:
 
         try:
             tmp_dir = Path(tempfile.mkdtemp(prefix="layrd_update_"))
-            filename = download_url.split("/")[-1] or "LayrdSync_update.exe"
-            tmp_path = tmp_dir / filename
+            tmp_path = tmp_dir / ASSET_NAME
 
             logger.info("Downloading update v%s from %s", new_version, download_url)
             with self._client.stream("GET", download_url) as resp:
@@ -77,18 +121,18 @@ class Updater:
                         f.write(chunk)
                         h.update(chunk)
 
-            if expected_hash and h.hexdigest() != expected_hash:
-                logger.error("Hash mismatch! Expected %s, got %s", expected_hash, h.hexdigest())
+            actual_hash = h.hexdigest()
+            if expected_hash and actual_hash != expected_hash:
+                logger.error("Hash mismatch! Expected %s, got %s", expected_hash, actual_hash)
                 tmp_path.unlink()
                 return False
 
-            logger.info("Download verified (SHA-256 OK), applying update")
+            logger.info("Download complete (%s), applying update", actual_hash[:12])
 
             if sys.platform == "win32" and getattr(sys, "frozen", False):
                 return self._apply_windows_update(tmp_path)
             else:
-                logger.info("Non-frozen or non-Windows: update downloaded to %s", tmp_path)
-                logger.info("Manual replacement required in dev mode")
+                logger.info("Non-frozen or non-Windows: update at %s (manual replacement)", tmp_path)
                 return True
 
         except Exception as e:
@@ -96,11 +140,10 @@ class Updater:
             return False
 
     def _apply_windows_update(self, new_exe: Path) -> bool:
-        """Windows-specific: write a batch script to replace the running exe and relaunch."""
+        """Windows: write a batch script to replace the running exe and relaunch."""
         current_exe = Path(sys.executable)
         pid = os.getpid()
 
-        # Batch script waits for current process to exit, then replaces exe and relaunches
         bat_path = new_exe.parent / "layrd_update.bat"
         bat_content = f"""@echo off
 echo Waiting for LayrdSync to exit...

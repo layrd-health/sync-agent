@@ -29,6 +29,20 @@ def setup_logging(verbose: bool = False):
     )
 
 
+def _setup_remote_logging(db: Database, api_url: str, api_key: str | None):
+    """Attach the remote log handler to the root logger."""
+    from .remote_logging import RemoteLogHandler
+    endpoint = f"{api_url.rstrip('/')}/api/sync-agent/logs"
+    handler = RemoteLogHandler(
+        endpoint=endpoint,
+        data_dir=db.db_path.parent,
+        api_key=api_key,
+    )
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    logging.getLogger("layrd_sync").addHandler(handler)
+    return handler
+
+
 def _needs_setup(db: Database) -> bool:
     """Check if first-run setup is needed."""
     return db.get_config("setup_complete") != "true"
@@ -90,9 +104,11 @@ def main():
     api_url = args.api_url or db.get_config("api_url", "http://localhost:8000")
     api_key = args.api_key or db.get_config("api_key")
 
+    remote_log_handler = _setup_remote_logging(db, api_url, api_key)
+
     uploader = Uploader(base_url=api_url, api_key=api_key)
     engine = SyncEngine(db=db, uploader=uploader)
-    updater = Updater(update_url=api_url)
+    updater = Updater()
 
     folders = db.get_folders(enabled_only=True)
     if not folders:
@@ -150,6 +166,8 @@ def main():
     scheduler.shutdown(wait=False)
     uploader.close()
     updater.close()
+    if remote_log_handler:
+        remote_log_handler.close()
     db.close()
 
 
