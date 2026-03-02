@@ -1,8 +1,4 @@
-"""Upload client — sends files to the Layrd backend.
-
-This is a stub. The actual upload endpoint, auth, and response handling
-will be implemented once the backend ingestion API is designed.
-"""
+"""Upload client — sends files to the Layrd backend via the sync upload endpoint."""
 
 import logging
 from dataclasses import dataclass
@@ -46,6 +42,7 @@ class Uploader:
                         "source_label": new_file.folder.label,
                         "source_path": str(new_file.path),
                         "file_hash": new_file.file_hash,
+                        "file_modified_at": str(new_file.modified_at),
                     },
                 )
 
