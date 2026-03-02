@@ -16,7 +16,10 @@ from .updater import Updater
 logger = logging.getLogger(__name__)
 
 
-ASSETS_DIR = Path(__file__).parent / "assets"
+if getattr(sys, "frozen", False):
+    ASSETS_DIR = Path(sys._MEIPASS) / "layrd_sync" / "assets"
+else:
+    ASSETS_DIR = Path(__file__).parent / "assets"
 
 
 def _load_logo() -> Image.Image:
@@ -149,12 +152,21 @@ class TrayApp:
         thread.start()
 
     def _run_settings(self):
-        from .setup_wizard import SetupWizard
-        wizard = SetupWizard(self.db)
-        if wizard.run():
+        import subprocess
+        if getattr(sys, "frozen", False):
+            result = subprocess.run(
+                [sys.executable, "--settings-only"],
+                timeout=300,
+            )
+        else:
+            result = subprocess.run(
+                [sys.executable, "-m", "layrd_sync.settings_runner"],
+                timeout=300,
+            )
+        if result.returncode == 0:
             self._update_menu()
             if self._icon:
-                self._icon.notify("Settings saved. Restart to apply folder changes.", "Settings Updated")
+                self._icon.notify("Settings saved.", "Settings Updated")
 
     def _on_quit(self, icon, item):
         logger.info("User requested quit")

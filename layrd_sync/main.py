@@ -47,6 +47,8 @@ def main():
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("--headless", action="store_true", help="Run without system tray (for testing)")
     parser.add_argument("--setup", action="store_true", help="Force the setup wizard to run")
+    parser.add_argument("--settings-only", action="store_true",
+                        help="Open settings wizard and exit (used internally by tray)")
     parser.add_argument("--add-folder", nargs=2, metavar=("PATH", "LABEL"),
                         help="Add a watched folder (e.g. --add-folder Z:\\ fax)")
     parser.add_argument("--api-url", default=None,
@@ -60,6 +62,11 @@ def main():
 
     db = Database()
     logger.info("Database at %s", db.db_path)
+
+    if args.settings_only:
+        completed = _run_setup(db)
+        db.close()
+        sys.exit(0 if completed else 1)
 
     # CLI folder management
     if args.add_folder:

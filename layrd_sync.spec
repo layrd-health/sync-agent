@@ -10,10 +10,13 @@ a = Analysis(
     ['launcher.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[
+        ('layrd_sync/assets', 'layrd_sync/assets'),
+    ],
     hiddenimports=[
         'pystray._win32',
         'pystray._darwin',
+        'layrd_sync.settings_runner',
     ],
     hookspath=[],
     hooksconfig={},
@@ -37,7 +40,7 @@ exe_release = EXE(
     strip=False,
     upx=True,
     console=False,
-    icon=None,
+    icon='layrd_sync/assets/icon.ico',
 )
 
 # Debug build — console window visible for troubleshooting
@@ -53,5 +56,5 @@ exe_debug = EXE(
     strip=False,
     upx=True,
     console=True,
-    icon=None,
+    icon='layrd_sync/assets/icon.ico',
 )
