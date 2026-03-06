@@ -13,7 +13,7 @@ from .database import Database
 logger = logging.getLogger(__name__)
 
 WINDOW_WIDTH = 540
-WINDOW_HEIGHT = 580
+WINDOW_HEIGHT = 640
 
 # Brand colors
 BG = "#f8f9fb"
@@ -121,7 +121,8 @@ class SetupWizard:
         self.root = tk.Tk()
         self.root.title("Layrd Sync")
         self.root.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
-        self.root.resizable(False, False)
+        self.root.minsize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.root.resizable(False, True)
         self.root.configure(bg=BG)
 
         self._set_window_icon()
@@ -149,19 +150,19 @@ class SetupWizard:
         self.root.geometry(f"+{x}+{y}")
 
     def _build_ui(self):
-        outer = ttk.Frame(self.root, style="BG.TFrame", padding=(24, 20))
+        outer = ttk.Frame(self.root, style="BG.TFrame", padding=(24, 16))
         outer.pack(fill=tk.BOTH, expand=True)
 
         # Header with logo
         header = ttk.Frame(outer, style="BG.TFrame")
-        header.pack(fill=tk.X, pady=(0, 16))
+        header.pack(fill=tk.X, pady=(0, 10))
 
-        logo_img = _render_logo_image(40)
+        logo_img = _render_logo_image(36)
         logo_photo = ImageTk.PhotoImage(logo_img)
         self._photo_refs.append(logo_photo)
 
         logo_label = ttk.Label(header, image=logo_photo, background=BG)
-        logo_label.pack(side=tk.LEFT, padx=(0, 12))
+        logo_label.pack(side=tk.LEFT, padx=(0, 10))
 
         title_frame = ttk.Frame(header, style="BG.TFrame")
         title_frame.pack(side=tk.LEFT, fill=tk.Y)
@@ -172,43 +173,43 @@ class SetupWizard:
 
         # Separator
         sep = tk.Frame(outer, height=1, bg=BORDER)
-        sep.pack(fill=tk.X, pady=(0, 16))
+        sep.pack(fill=tk.X, pady=(0, 10))
 
         # Card container
-        card = ttk.Frame(outer, style="Card.TFrame", padding=20)
+        card = ttk.Frame(outer, style="Card.TFrame", padding=(16, 12))
         card.pack(fill=tk.BOTH, expand=True)
         card.configure(borderwidth=1, relief="solid")
 
         # Server URL section
         ttk.Label(card, text="Server URL", style="Section.TLabel").pack(anchor=tk.W)
         ttk.Label(card, text="Layrd backend address (leave default for cloud).",
-                  style="Hint.TLabel").pack(anchor=tk.W, pady=(1, 6))
+                  style="Hint.TLabel").pack(anchor=tk.W, pady=(0, 4))
         self.api_url_var = tk.StringVar(
             value=self.db.get_config("api_url", "https://api.thelayrd.com"))
         url_entry = ttk.Entry(card, textvariable=self.api_url_var)
-        url_entry.pack(fill=tk.X, pady=(0, 12))
+        url_entry.pack(fill=tk.X, pady=(0, 8))
 
         # API Key section
         ttk.Label(card, text="API Key", style="Section.TLabel").pack(anchor=tk.W)
         ttk.Label(card, text="Your authentication key for the Layrd service.",
-                  style="Hint.TLabel").pack(anchor=tk.W, pady=(1, 6))
+                  style="Hint.TLabel").pack(anchor=tk.W, pady=(0, 4))
         self.api_key_var = tk.StringVar(value=self.db.get_config("api_key", ""))
         key_entry = ttk.Entry(card, textvariable=self.api_key_var, show="\u2022")
-        key_entry.pack(fill=tk.X, pady=(0, 16))
+        key_entry.pack(fill=tk.X, pady=(0, 10))
 
         # Watched folders section
         ttk.Label(card, text="Watched Folders", style="Section.TLabel").pack(anchor=tk.W)
         ttk.Label(card, text="Folders this agent monitors for new faxes and scans.",
-                  style="Hint.TLabel").pack(anchor=tk.W, pady=(1, 6))
+                  style="Hint.TLabel").pack(anchor=tk.W, pady=(0, 4))
 
         list_frame = tk.Frame(card, bg=BORDER, bd=1, relief="solid")
-        list_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
+        list_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 6))
 
         inner_list = tk.Frame(list_frame, bg=LIST_BG)
         inner_list.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
 
         self.folder_listbox = tk.Listbox(
-            inner_list, height=5, font=("Segoe UI", 9),
+            inner_list, height=3, font=("Segoe UI", 9),
             bg=LIST_BG, fg=TEXT_PRIMARY, selectbackground=LIST_SELECT,
             selectforeground=TEXT_PRIMARY, bd=0, highlightthickness=0,
             activestyle="none",
@@ -224,7 +225,7 @@ class SetupWizard:
             self.folder_listbox.insert(tk.END, f"  {f.label.upper()}  \u2502  {f.path}")
 
         btn_frame = ttk.Frame(card, style="Card.TFrame")
-        btn_frame.pack(fill=tk.X, pady=(0, 12))
+        btn_frame.pack(fill=tk.X, pady=(0, 6))
 
         self.label_var = tk.StringVar(value="fax")
         label_combo = ttk.Combobox(
@@ -248,7 +249,7 @@ class SetupWizard:
 
         # Footer with save button (tk.Button for reliable foreground color on Windows)
         footer = ttk.Frame(outer, style="BG.TFrame")
-        footer.pack(fill=tk.X, pady=(16, 0))
+        footer.pack(fill=tk.X, pady=(10, 0))
 
         save_btn = tk.Button(
             footer, text="Save & Start", command=self._save,
