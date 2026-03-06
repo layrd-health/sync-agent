@@ -13,7 +13,7 @@ from .database import Database
 logger = logging.getLogger(__name__)
 
 WINDOW_WIDTH = 540
-WINDOW_HEIGHT = 520
+WINDOW_HEIGHT = 580
 
 # Brand colors
 BG = "#f8f9fb"
@@ -179,6 +179,15 @@ class SetupWizard:
         card.pack(fill=tk.BOTH, expand=True)
         card.configure(borderwidth=1, relief="solid")
 
+        # Server URL section
+        ttk.Label(card, text="Server URL", style="Section.TLabel").pack(anchor=tk.W)
+        ttk.Label(card, text="Layrd backend address (leave default for cloud).",
+                  style="Hint.TLabel").pack(anchor=tk.W, pady=(1, 6))
+        self.api_url_var = tk.StringVar(
+            value=self.db.get_config("api_url", "https://api.thelayrd.com"))
+        url_entry = ttk.Entry(card, textvariable=self.api_url_var)
+        url_entry.pack(fill=tk.X, pady=(0, 12))
+
         # API Key section
         ttk.Label(card, text="API Key", style="Section.TLabel").pack(anchor=tk.W)
         ttk.Label(card, text="Your authentication key for the Layrd service.",
@@ -273,6 +282,10 @@ class SetupWizard:
         if not self._folders:
             messagebox.showerror("Missing Folders", "Add at least one folder to watch.")
             return
+
+        api_url = self.api_url_var.get().strip()
+        if api_url:
+            self.db.set_config("api_url", api_url)
 
         api_key = self.api_key_var.get().strip()
         if api_key:
