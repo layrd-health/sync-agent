@@ -43,6 +43,36 @@ def _setup_remote_logging(db: Database, api_url: str, api_key: str | None):
     return handler
 
 
+def _fetch_remote_config(db: Database, api_url: str, api_key: str | None) -> tuple[str, str | None]:
+    """Check the server for config overrides (e.g. a new api_url).
+
+    Returns the (possibly updated) api_url and api_key.  Failures are
+    silently ignored so the agent always starts.
+    """
+    import httpx
+    try:
+        headers = {"X-API-Key": api_key} if api_key else {}
+        resp = httpx.get(
+            f"{api_url.rstrip('/')}/api/sync-agent/config",
+            headers=headers,
+            timeout=5,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            new_url = data.get("api_url")
+            if new_url and new_url != api_url:
+                logger.info("Remote config: redirecting to %s", new_url)
+                db.set_config("api_url", new_url)
+                api_url = new_url
+            new_key = data.get("api_key")
+            if new_key and new_key != api_key:
+                db.set_config("api_key", new_key)
+                api_key = new_key
+    except Exception:
+        logger.debug("Remote config check skipped (server unreachable)")
+    return api_url, api_key
+
+
 def _needs_setup(db: Database) -> bool:
     """Check if first-run setup is needed."""
     return db.get_config("setup_complete") != "true"
@@ -103,6 +133,9 @@ def main():
     # Resolve API URL: CLI arg > saved config > default
     api_url = args.api_url or db.get_config("api_url", "http://localhost:8000")
     api_key = args.api_key or db.get_config("api_key")
+
+    # Check for remote config override (server can redirect agents to a new URL)
+    api_url, api_key = _fetch_remote_config(db, api_url, api_key)
 
     remote_log_handler = _setup_remote_logging(db, api_url, api_key)
 

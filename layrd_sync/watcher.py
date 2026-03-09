@@ -89,12 +89,10 @@ class FolderWatcher:
         return all_new
 
     def _iter_files(self, root: Path):
-        """Recursively yield supported files. Handles permission errors gracefully."""
+        """Yield supported files in the top-level directory only (no recursion)."""
         try:
             for entry in root.iterdir():
-                if entry.is_dir():
-                    yield from self._iter_files(entry)
-                elif entry.is_file() and entry.suffix.lower() in SUPPORTED_EXTENSIONS:
+                if entry.is_file() and entry.suffix.lower() in SUPPORTED_EXTENSIONS:
                     yield entry
         except PermissionError as e:
             logger.warning("Permission denied: %s", e)
