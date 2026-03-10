@@ -1,12 +1,15 @@
 """Core sync engine — ties together watcher, uploader, and state tracking."""
 
 import logging
+import shutil
 import threading
 from pathlib import Path
 
 from .database import Database
 from .watcher import FolderWatcher, NewFile
 from .uploader import Uploader, UploadResult
+
+RECYCLE_FOLDER_NAME = "layrd_recycle"
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +53,8 @@ class SyncEngine:
                     cb(uploaded_count, failed_count)
                 except Exception:
                     logger.exception("Error in on_scan_complete callback")
+
+            self._run_cleanup_cycle()
 
         finally:
             self._running = False
@@ -102,6 +107,52 @@ class SyncEngine:
                     logger.exception("Error in on_file_failed callback")
 
         return result
+
+    def _run_cleanup_cycle(self):
+        """Check which uploaded files have been fully processed and move them to recycle."""
+        uploaded_files = self.db.get_uploaded_files()
+        if not uploaded_files:
+            return
+
+        hash_to_files: dict[str, list] = {}
+        for uf in uploaded_files:
+            hash_to_files.setdefault(uf.file_hash, []).append(uf)
+
+        ready_hashes = self.uploader.check_cleanup(list(hash_to_files.keys()))
+        if not ready_hashes:
+            return
+
+        folders_by_id: dict[int, str] = {}
+        for folder in self.db.get_folders(enabled_only=False):
+            folders_by_id[folder.id] = folder.path
+
+        cleaned_count = 0
+        for file_hash in ready_hashes:
+            for uf in hash_to_files.get(file_hash, []):
+                folder_path = folders_by_id.get(uf.folder_id)
+                if not folder_path:
+                    self.db.mark_file_cleaned(uf.id)
+                    continue
+
+                src = Path(folder_path) / uf.file_path
+                if src.exists():
+                    recycle_dir = Path(folder_path) / RECYCLE_FOLDER_NAME
+                    recycle_dir.mkdir(exist_ok=True)
+                    dest = recycle_dir / src.name
+                    if dest.exists():
+                        dest = recycle_dir / f"{src.stem}_{uf.id}{src.suffix}"
+                    try:
+                        shutil.move(str(src), str(dest))
+                        logger.info("Cleaned up: %s → %s", src.name, dest)
+                    except OSError as e:
+                        logger.warning("Failed to move %s to recycle: %s", src, e)
+                        continue
+
+                self.db.mark_file_cleaned(uf.id)
+                cleaned_count += 1
+
+        if cleaned_count:
+            logger.info("Cleanup: moved %d file(s) to recycle", cleaned_count)
 
     def retry_failed(self) -> int:
         """Reset all failed uploads and re-run a sync cycle.

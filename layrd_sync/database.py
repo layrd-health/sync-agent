@@ -236,6 +236,20 @@ class Database:
         self.conn.commit()
         return cur.rowcount
 
+    def get_uploaded_files(self) -> list[UploadedFile]:
+        """Return all files with upload_status='uploaded' (candidates for cleanup)."""
+        rows = self.conn.execute(
+            "SELECT * FROM uploaded_files WHERE upload_status = 'uploaded'"
+        ).fetchall()
+        return [self._row_to_file(r) for r in rows]
+
+    def mark_file_cleaned(self, file_id: int):
+        self.conn.execute(
+            "UPDATE uploaded_files SET upload_status = 'cleaned' WHERE id = ?",
+            (file_id,),
+        )
+        self.conn.commit()
+
     def get_upload_stats(self, folder_id: int | None = None) -> dict[str, int]:
         where = ""
         params: list = []
