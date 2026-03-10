@@ -243,6 +243,13 @@ class Database:
         ).fetchall()
         return [self._row_to_file(r) for r in rows]
 
+    def reset_uploaded_file(self, file_id: int):
+        """Delete an uploaded_files record so the watcher re-discovers the file."""
+        self.conn.execute(
+            "DELETE FROM uploaded_files WHERE id = ?", (file_id,)
+        )
+        self.conn.commit()
+
     def mark_file_cleaned(self, file_id: int):
         self.conn.execute(
             "UPDATE uploaded_files SET upload_status = 'cleaned' WHERE id = ?",

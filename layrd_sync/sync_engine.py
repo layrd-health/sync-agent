@@ -118,6 +118,22 @@ class SyncEngine:
         for uf in uploaded_files:
             hash_to_files.setdefault(uf.file_hash, []).append(uf)
 
+        all_hashes = list(hash_to_files.keys())
+
+        # Verify uploads actually exist in the backend; reset phantoms
+        existing_hashes = set(self.uploader.check_exists(all_hashes))
+        phantom_count = 0
+        for file_hash in all_hashes:
+            if file_hash not in existing_hashes:
+                for uf in hash_to_files.pop(file_hash):
+                    self.db.reset_uploaded_file(uf.id)
+                    phantom_count += 1
+        if phantom_count:
+            logger.warning("Reset %d phantom upload(s) for re-upload", phantom_count)
+
+        if not hash_to_files:
+            return
+
         ready_hashes = self.uploader.check_cleanup(list(hash_to_files.keys()))
         if not ready_hashes:
             return
