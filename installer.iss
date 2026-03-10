@@ -3,7 +3,7 @@
 ; Build with: iscc installer.iss
 
 #define MyAppName "Layrd Sync"
-#define MyAppVersion "0.3.2"
+#define MyAppVersion "0.3.3"
 #define MyAppPublisher "Layrd Health"
 #define MyAppURL "https://thelayrd.com"
 #define MyAppExeName "LayrdSync.exe"

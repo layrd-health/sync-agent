@@ -172,9 +172,9 @@ class TrayApp:
                         "Update installed. Restarting...",
                         "Update Complete",
                     )
-                logger.info("Update applied via tray, exiting for restart")
-                import sys
-                sys.exit(0)
+                logger.info("Update applied via tray, stopping tray to let process exit")
+                if self._icon:
+                    self._icon.stop()
             else:
                 self._status_text = "Update failed"
                 self._update_menu()
