@@ -1,3 +1,8 @@
 """Layrd Document Sync Agent."""
 
-__version__ = "0.2.0"
+from importlib.metadata import version, PackageNotFoundError
+
+try:
+    __version__ = version("layrd-sync-agent")
+except PackageNotFoundError:
+    __version__ = "0.3.0"

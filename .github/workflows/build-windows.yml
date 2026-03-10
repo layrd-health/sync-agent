@@ -6,6 +6,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -19,6 +22,13 @@ jobs:
 
       - name: Build executables (release + debug)
         run: uv run pyinstaller layrd_sync.spec
+
+      - name: Sync version to installer script
+        shell: pwsh
+        run: |
+          $version = (uv run python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          (Get-Content installer.iss) -replace '#define MyAppVersion ".*"', "#define MyAppVersion `"$version`"" | Set-Content installer.iss
+          Write-Host "Installer version set to $version"
 
       - name: Install Inno Setup
         run: choco install innosetup -y

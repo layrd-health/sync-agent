@@ -215,6 +215,27 @@ class Database:
         rows = self.conn.execute(query, params).fetchall()
         return [self._row_to_file(r) for r in rows]
 
+    def get_failed_files(self, folder_id: int | None = None) -> list[UploadedFile]:
+        query = "SELECT * FROM uploaded_files WHERE upload_status = 'failed'"
+        params: list = []
+        if folder_id is not None:
+            query += " AND folder_id = ?"
+            params.append(folder_id)
+        rows = self.conn.execute(query, params).fetchall()
+        return [self._row_to_file(r) for r in rows]
+
+    def reset_failed_files(self, folder_id: int | None = None) -> int:
+        """Delete failed file records so they get re-discovered on next scan.
+        Returns the number of records removed."""
+        query = "DELETE FROM uploaded_files WHERE upload_status = 'failed'"
+        params: list = []
+        if folder_id is not None:
+            query += " AND folder_id = ?"
+            params.append(folder_id)
+        cur = self.conn.execute(query, params)
+        self.conn.commit()
+        return cur.rowcount
+
     def get_upload_stats(self, folder_id: int | None = None) -> dict[str, int]:
         where = ""
         params: list = []

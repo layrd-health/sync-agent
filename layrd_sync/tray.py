@@ -106,6 +106,11 @@ class TrayApp:
             *folder_items,
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Sync Now", self._on_sync_now),
+            pystray.MenuItem(
+                f"Retry Failed ({failed})" if failed else "Retry Failed",
+                self._on_retry_failed,
+                enabled=failed > 0,
+            ),
             pystray.MenuItem("Check for Updates", self._on_check_update),
             pystray.MenuItem("Settings…", self._on_settings),
             pystray.Menu.SEPARATOR,
@@ -125,6 +130,24 @@ class TrayApp:
         except Exception as e:
             logger.exception("Sync error")
             self._status_text = f"Error: {e}"
+        self._update_menu()
+
+    def _on_retry_failed(self, icon, item):
+        self._status_text = "Retrying failed uploads..."
+        self._update_menu()
+        thread = threading.Thread(target=self._run_retry_failed, daemon=True)
+        thread.start()
+
+    def _run_retry_failed(self):
+        try:
+            count = self.sync_engine.retry_failed()
+            if count > 0:
+                self._status_text = f"Retried {count} file(s)"
+            else:
+                self._status_text = "No failed files to retry"
+        except Exception as e:
+            logger.exception("Retry error")
+            self._status_text = f"Retry error: {e}"
         self._update_menu()
 
     def _on_check_update(self, icon, item):

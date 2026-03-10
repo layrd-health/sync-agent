@@ -103,6 +103,17 @@ class SyncEngine:
 
         return result
 
+    def retry_failed(self) -> int:
+        """Reset all failed uploads and re-run a sync cycle.
+        Returns the number of failed files queued for retry."""
+        count = self.db.reset_failed_files()
+        if count > 0:
+            logger.info("Reset %d failed file(s) for retry", count)
+            self.run_sync_cycle()
+        else:
+            logger.info("No failed files to retry")
+        return count
+
     @property
     def is_running(self) -> bool:
         return self._running

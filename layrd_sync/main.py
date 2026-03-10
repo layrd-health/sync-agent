@@ -98,6 +98,8 @@ def main():
     parser.add_argument("--api-url", default=None,
                         help="Layrd backend URL (overrides saved config)")
     parser.add_argument("--api-key", default=None, help="API key for authentication")
+    parser.add_argument("--retry-failed", action="store_true",
+                        help="Reset all failed uploads and retry them")
     parser.add_argument("--poll-interval", type=int, default=DEFAULT_POLL_INTERVAL,
                         help=f"Seconds between scans (default: {DEFAULT_POLL_INTERVAL})")
 
@@ -119,6 +121,19 @@ def main():
         logger.info("Added watched folder: %s (%s)", folder.path, folder.label)
         print(f"Added: {folder.label} → {folder.path} (poll every {folder.poll_interval_seconds}s)")
         db.set_config("setup_complete", "true")
+        db.close()
+        return
+
+    # Retry failed uploads
+    if args.retry_failed:
+        api_url = args.api_url or db.get_config("api_url", "http://localhost:8000")
+        api_key = args.api_key or db.get_config("api_key")
+        uploader = Uploader(base_url=api_url, api_key=api_key)
+        engine = SyncEngine(db=db, uploader=uploader)
+        count = engine.retry_failed()
+        stats = db.get_upload_stats()
+        print(f"Retried {count} file(s). Current stats: {stats}")
+        uploader.close()
         db.close()
         return
 
