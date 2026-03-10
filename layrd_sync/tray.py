@@ -159,13 +159,27 @@ class TrayApp:
     def _run_update_check(self):
         info = self.updater.check_for_update()
         if info:
-            self._status_text = f"Update available: v{info['version']}"
+            self._status_text = f"Downloading update v{info['version']}..."
             self._update_menu()
             if self._icon:
                 self._icon.notify(
-                    f"Layrd Sync v{info['version']} is available.",
+                    f"Downloading Layrd Sync v{info['version']}...",
                     "Update Available",
                 )
+            if self.updater.download_and_apply(info):
+                if self._icon:
+                    self._icon.notify(
+                        "Update installed. Restarting...",
+                        "Update Complete",
+                    )
+                logger.info("Update applied via tray, exiting for restart")
+                import sys
+                sys.exit(0)
+            else:
+                self._status_text = "Update failed"
+                self._update_menu()
+                if self._icon:
+                    self._icon.notify("Update download or install failed.", "Update Error")
         else:
             if self._icon:
                 self._icon.notify("You're running the latest version.", "No Updates")
