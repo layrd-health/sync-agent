@@ -23,6 +23,7 @@ class SyncEngine:
         self.uploader = uploader
         self._lock = threading.Lock()
         self._running = False
+        self.last_reconcile: dict | None = None
 
         self.on_file_uploaded: list[callable] = []
         self.on_file_failed: list[callable] = []
@@ -54,6 +55,7 @@ class SyncEngine:
                 except Exception:
                     logger.exception("Error in on_scan_complete callback")
 
+            self._run_reconcile_cycle()
             self._run_cleanup_cycle()
 
         finally:
@@ -107,6 +109,24 @@ class SyncEngine:
                     logger.exception("Error in on_file_failed callback")
 
         return result
+
+    def _run_reconcile_cycle(self):
+        """Report current inbox contents to the backend for reconciliation."""
+        try:
+            inbox_hashes = self.watcher.get_all_inbox_hashes()
+            result = self.uploader.reconcile(inbox_hashes)
+            if result:
+                self.last_reconcile = result
+                if result.get("reconciled_count", 0) > 0:
+                    logger.info(
+                        "Reconcile: %d doc(s) marked externally_handled, "
+                        "%d active, %d in inbox",
+                        result["reconciled_count"],
+                        result["active_count"],
+                        result["inbox_count"],
+                    )
+        except Exception:
+            logger.exception("Error in reconcile cycle")
 
     def _run_cleanup_cycle(self):
         """Check which uploaded files have been fully processed and move them to recycle."""

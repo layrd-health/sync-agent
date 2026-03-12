@@ -88,6 +88,25 @@ class FolderWatcher:
             all_new.extend(self.scan_folder(folder))
         return all_new
 
+    def get_all_inbox_hashes(self) -> list[str]:
+        """Return the SHA-256 hash of every supported file currently on disk.
+
+        Unlike :meth:`scan_all`, this does **not** skip already-uploaded files
+        or apply a stability window — it is a raw snapshot of what is in the
+        inbox right now, used for backend reconciliation.
+        """
+        hashes: list[str] = []
+        for folder in self.db.get_folders(enabled_only=True):
+            folder_path = Path(folder.path)
+            if not folder_path.exists():
+                continue
+            for file_path in self._iter_files(folder_path):
+                try:
+                    hashes.append(hash_file(file_path))
+                except OSError as e:
+                    logger.warning("Error hashing %s: %s", file_path, e)
+        return hashes
+
     def _iter_files(self, root: Path):
         """Yield supported files in the top-level directory only (no recursion)."""
         try:

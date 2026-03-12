@@ -109,5 +109,26 @@ class Uploader:
             logger.warning("Cleanup check error: %s", e)
             return []
 
+    def reconcile(self, inbox_hashes: list[str]) -> dict:
+        """Report current inbox contents so the backend can mark missing docs."""
+        try:
+            headers: dict[str, str] = {}
+            if self.api_key:
+                headers["Authorization"] = f"Bearer {self.api_key}"
+
+            response = self._client.post(
+                f"{self.base_url}/api/sync/reconcile",
+                headers=headers,
+                json={"inbox_hashes": inbox_hashes},
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                logger.warning("Reconcile failed: HTTP %s", response.status_code)
+                return {}
+        except Exception as e:
+            logger.warning("Reconcile error: %s", e)
+            return {}
+
     def close(self):
         self._client.close()

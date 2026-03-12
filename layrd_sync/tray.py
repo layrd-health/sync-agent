@@ -78,10 +78,17 @@ class TrayApp:
         failed = stats.get("failed", 0)
         pending = stats.get("pending", 0)
 
+        reconcile = self.sync_engine.last_reconcile
+        if reconcile:
+            inbox_count = reconcile.get("inbox_count", 0)
+            active_count = reconcile.get("active_count", 0)
+            files_line = f"Inbox: {inbox_count} files, {active_count} active in Layrd"
+        else:
+            files_line = f"Files: {uploaded} uploaded, {failed} failed, {pending} pending"
+
         folders = self.db.get_folders(enabled_only=False)
         folder_items = []
         for f in folders:
-            state = "on" if f.enabled else "off"
             folder_items.append(
                 pystray.MenuItem(
                     f"  {f.label}: {f.path}",
@@ -96,11 +103,7 @@ class TrayApp:
             pystray.MenuItem(f"Layrd Sync v{__version__}", None, enabled=False),
             pystray.MenuItem(f"Status: {self._status_text}", None, enabled=False),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem(
-                f"Files: {uploaded} uploaded, {failed} failed, {pending} pending",
-                None,
-                enabled=False,
-            ),
+            pystray.MenuItem(files_line, None, enabled=False),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Watched Folders:", None, enabled=False),
             *folder_items,
