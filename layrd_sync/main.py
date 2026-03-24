@@ -128,7 +128,8 @@ def main():
     if args.retry_failed:
         api_url = args.api_url or db.get_config("api_url", "http://localhost:8000")
         api_key = args.api_key or db.get_config("api_key")
-        uploader = Uploader(base_url=api_url, api_key=api_key)
+        location = db.get_config("location", "")
+        uploader = Uploader(base_url=api_url, api_key=api_key, location=location)
         engine = SyncEngine(db=db, uploader=uploader)
         count = engine.retry_failed()
         stats = db.get_upload_stats()
@@ -154,7 +155,8 @@ def main():
 
     remote_log_handler = _setup_remote_logging(db, api_url, api_key)
 
-    uploader = Uploader(base_url=api_url, api_key=api_key)
+    location = db.get_config("location", "")
+    uploader = Uploader(base_url=api_url, api_key=api_key, location=location)
     engine = SyncEngine(db=db, uploader=uploader)
     updater = Updater()
 

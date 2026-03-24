@@ -197,6 +197,14 @@ class SetupWizard:
         key_entry = ttk.Entry(card, textvariable=self.api_key_var, show="\u2022")
         key_entry.pack(fill=tk.X, pady=(0, 10))
 
+        # Location section
+        ttk.Label(card, text="Location", style="Section.TLabel").pack(anchor=tk.W)
+        ttk.Label(card, text="The clinic location this agent is running at.",
+                  style="Hint.TLabel").pack(anchor=tk.W, pady=(0, 4))
+        self.location_var = tk.StringVar(value=self.db.get_config("location", ""))
+        location_entry = ttk.Entry(card, textvariable=self.location_var)
+        location_entry.pack(fill=tk.X, pady=(0, 10))
+
         # Watched folders section
         ttk.Label(card, text="Watched Folders", style="Section.TLabel").pack(anchor=tk.W)
         ttk.Label(card, text="Folders this agent monitors for new faxes and scans.",
@@ -291,6 +299,9 @@ class SetupWizard:
         api_key = self.api_key_var.get().strip()
         if api_key:
             self.db.set_config("api_key", api_key)
+
+        location = self.location_var.get().strip()
+        self.db.set_config("location", location)
 
         existing = {f.path: f for f in self.db.get_folders(enabled_only=False)}
         new_paths = {path for path, _ in self._folders}

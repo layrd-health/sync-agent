@@ -21,9 +21,10 @@ class UploadResult:
 
 
 class Uploader:
-    def __init__(self, base_url: str, api_key: str | None = None):
+    def __init__(self, base_url: str, api_key: str | None = None, location: str = ""):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
+        self.location = location
         self._client = httpx.Client(timeout=UPLOAD_TIMEOUT_SECONDS)
 
     def upload(self, new_file: NewFile) -> UploadResult:
@@ -41,6 +42,7 @@ class Uploader:
                     data={
                         "source_label": new_file.folder.label,
                         "source_path": str(new_file.path),
+                        "source_location": self.location,
                         "file_hash": new_file.file_hash,
                         "file_modified_at": str(new_file.modified_at),
                     },
@@ -95,10 +97,13 @@ class Uploader:
             if self.api_key:
                 headers["Authorization"] = f"Bearer {self.api_key}"
 
+            body: dict = {"file_hashes": file_hashes}
+            if self.location:
+                body["source_location"] = self.location
             response = self._client.post(
                 f"{self.base_url}/api/sync/cleanup-ready",
                 headers=headers,
-                json={"file_hashes": file_hashes},
+                json=body,
             )
             if response.status_code == 200:
                 return response.json().get("ready", [])
@@ -116,10 +121,13 @@ class Uploader:
             if self.api_key:
                 headers["Authorization"] = f"Bearer {self.api_key}"
 
+            body: dict = {"inbox_hashes": inbox_hashes}
+            if self.location:
+                body["source_location"] = self.location
             response = self._client.post(
                 f"{self.base_url}/api/sync/reconcile",
                 headers=headers,
-                json={"inbox_hashes": inbox_hashes},
+                json=body,
             )
             if response.status_code == 200:
                 return response.json()
