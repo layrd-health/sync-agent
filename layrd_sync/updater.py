@@ -146,24 +146,34 @@ class Updater:
 
         bat_path = new_exe.parent / "layrd_update.bat"
         bat_content = f"""@echo off
-echo Waiting for LayrdSync to exit...
+echo Waiting for LayrdSync (PID {pid}) to exit...
 :wait
-tasklist /FI "PID eq {pid}" 2>NUL | find /I "{pid}" >NUL
-if not errorlevel 1 (
+tasklist /FI "PID eq {pid}" /NH 2>NUL | findstr /B /C:"{pid} " >NUL 2>NUL
+if %errorlevel%==0 (
     timeout /t 1 /nobreak >NUL
     goto wait
 )
+echo Process exited. Waiting for file lock to release...
+timeout /t 2 /nobreak >NUL
+
 echo Replacing executable...
-copy /Y "{new_exe}" "{current_exe}"
+set RETRIES=0
+:copy_retry
+copy /Y "{new_exe}" "{current_exe}" >NUL 2>NUL
 if errorlevel 1 (
-    echo Update failed - could not replace executable
-    pause
-    exit /b 1
+    set /a RETRIES+=1
+    if %RETRIES% GEQ 10 (
+        echo Update failed after 10 retries - could not replace executable
+        exit /b 1
+    )
+    timeout /t 1 /nobreak >NUL
+    goto copy_retry
 )
 echo Relaunching LayrdSync...
-start "" "{current_exe}"
-del "{new_exe}"
-del "%~f0"
+start "" /D "{current_exe.parent}" "{current_exe}"
+timeout /t 2 /nobreak >NUL
+del /Q "{new_exe}" >NUL 2>NUL
+del /Q "%~f0" >NUL 2>NUL
 """
         bat_path.write_text(bat_content)
 
