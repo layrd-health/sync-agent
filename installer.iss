@@ -34,6 +34,10 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 Name: "autostart"; Description: "Start automatically when I log in"; GroupDescription: "Other:"
 
+[InstallDelete]
+; Clean old _internal folder to prevent stale dist-info metadata
+Type: filesandordirs; Name: "{app}\_internal"
+
 [Files]
 Source: "dist\LayrdSync\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 

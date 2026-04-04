@@ -178,6 +178,9 @@ if %errorlevel%==0 (
 echo Process exited. Waiting for file locks to release...
 timeout /t 3 /nobreak >NUL
 
+echo Cleaning old files...
+rmdir /S /Q "{app_dir}\\_internal" >NUL 2>NUL
+
 echo Replacing app folder contents...
 set RETRIES=0
 :copy_retry
