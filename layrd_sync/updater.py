@@ -159,12 +159,7 @@ class Updater:
             logger.info("Extracting update zip to %s", staging_dir)
             with zipfile.ZipFile(downloaded_path, "r") as zf:
                 zf.extractall(staging_dir)
-            # The zip contains a LayrdSync/ folder — find it
-            extracted_dirs = [d for d in staging_dir.iterdir() if d.is_dir()]
-            if extracted_dirs:
-                source_dir = extracted_dirs[0]
-            else:
-                source_dir = staging_dir
+            source_dir = staging_dir
         else:
             # Fallback for old single-exe format
             staging_dir.mkdir(parents=True, exist_ok=True)
