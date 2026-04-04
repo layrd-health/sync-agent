@@ -35,8 +35,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "autostart"; Description: "Start automatically when I log in"; GroupDescription: "Other:"
 
 [Files]
-Source: "dist\LayrdSync.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "dist\LayrdSyncDebug.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\LayrdSync\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

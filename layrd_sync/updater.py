@@ -3,10 +3,10 @@
 Flow:
 1. GET https://api.github.com/repos/{owner}/{repo}/releases/latest
 2. Parse version tag, compare to current
-3. Download the LayrdSync.exe asset from the release
+3. Download the LayrdSync.zip asset from the release
 4. Verify SHA-256 if provided in release body
 5. On Windows: write a batch script that waits for this process to exit,
-   replaces the exe, and relaunches. Then exit.
+   replaces the app folder, and relaunches. Then exit.
 """
 
 import logging
@@ -16,6 +16,7 @@ import sys
 import os
 import tempfile
 import subprocess
+import zipfile
 from pathlib import Path
 
 import httpx
@@ -26,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 GITHUB_REPO = "layrd-health/sync-agent"
 GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-ASSET_NAME = "LayrdSync.exe"
+ASSET_NAME = "LayrdSync.zip"
 
 
 def _version_tuple(v: str) -> tuple[int, ...]:
@@ -81,6 +82,13 @@ class Updater:
                     break
 
             if not download_url:
+                # Fallback: check for .exe (old format)
+                for asset in assets:
+                    if asset.get("name") == "LayrdSync.exe":
+                        download_url = asset.get("browser_download_url")
+                        break
+
+            if not download_url:
                 logger.warning("Release %s has no %s asset", tag, ASSET_NAME)
                 return None
 
@@ -130,7 +138,7 @@ class Updater:
             logger.info("Download complete (%s), applying update", actual_hash[:12])
 
             if sys.platform == "win32" and getattr(sys, "frozen", False):
-                return self._apply_windows_update(tmp_path)
+                return self._apply_windows_update(tmp_path, tmp_dir)
             else:
                 logger.info("Non-frozen or non-Windows: update at %s (manual replacement)", tmp_path)
                 return True
@@ -139,12 +147,31 @@ class Updater:
             logger.exception("Failed to download/apply update: %s", e)
             return False
 
-    def _apply_windows_update(self, new_exe: Path) -> bool:
-        """Windows: write a batch script to replace the running exe and relaunch."""
+    def _apply_windows_update(self, downloaded_path: Path, tmp_dir: Path) -> bool:
+        """Windows: extract zip, write a batch script to swap the app folder and relaunch."""
         current_exe = Path(sys.executable)
+        app_dir = current_exe.parent
         pid = os.getpid()
 
-        bat_path = new_exe.parent / "layrd_update.bat"
+        # Extract zip to a staging directory
+        staging_dir = tmp_dir / "staging"
+        if downloaded_path.suffix == ".zip":
+            logger.info("Extracting update zip to %s", staging_dir)
+            with zipfile.ZipFile(downloaded_path, "r") as zf:
+                zf.extractall(staging_dir)
+            # The zip contains a LayrdSync/ folder — find it
+            extracted_dirs = [d for d in staging_dir.iterdir() if d.is_dir()]
+            if extracted_dirs:
+                source_dir = extracted_dirs[0]
+            else:
+                source_dir = staging_dir
+        else:
+            # Fallback for old single-exe format
+            staging_dir.mkdir(parents=True, exist_ok=True)
+            source_dir = staging_dir
+            downloaded_path.rename(staging_dir / current_exe.name)
+
+        bat_path = tmp_dir / "layrd_update.bat"
         bat_content = f"""@echo off
 echo Waiting for LayrdSync (PID {pid}) to exit...
 :wait
@@ -153,27 +180,26 @@ if %errorlevel%==0 (
     timeout /t 1 /nobreak >NUL
     goto wait
 )
-echo Process exited. Waiting for file lock to release...
-timeout /t 2 /nobreak >NUL
+echo Process exited. Waiting for file locks to release...
+timeout /t 3 /nobreak >NUL
 
-echo Replacing executable...
+echo Replacing app folder contents...
 set RETRIES=0
 :copy_retry
-copy /Y "{new_exe}" "{current_exe}" >NUL 2>NUL
+xcopy /E /Y /Q "{source_dir}\\*" "{app_dir}\\" >NUL 2>NUL
 if errorlevel 1 (
     set /a RETRIES+=1
     if %RETRIES% GEQ 10 (
-        echo Update failed after 10 retries - could not replace executable
+        echo Update failed after 10 retries
         exit /b 1
     )
     timeout /t 1 /nobreak >NUL
     goto copy_retry
 )
 echo Relaunching LayrdSync...
-start "" /D "{current_exe.parent}" "{current_exe}"
-timeout /t 2 /nobreak >NUL
-del /Q "{new_exe}" >NUL 2>NUL
-del /Q "%~f0" >NUL 2>NUL
+start "" /D "{app_dir}" "{current_exe}"
+timeout /t 3 /nobreak >NUL
+rmdir /S /Q "{tmp_dir}" >NUL 2>NUL
 """
         bat_path.write_text(bat_content)
 

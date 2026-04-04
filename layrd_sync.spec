@@ -31,8 +31,6 @@ pyz = PYZ(a.pure, cipher=block_cipher)
 exe_release = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
     name='LayrdSync',
     debug=False,
@@ -47,8 +45,6 @@ exe_release = EXE(
 exe_debug = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
     name='LayrdSyncDebug',
     debug=False,
@@ -57,4 +53,15 @@ exe_debug = EXE(
     upx=True,
     console=True,
     icon='layrd_sync/assets/icon.ico',
+)
+
+# Collect all files into a directory
+coll = COLLECT(
+    exe_release,
+    exe_debug,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    name='LayrdSync',
 )

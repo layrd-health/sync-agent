@@ -20,7 +20,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev
 
-      - name: Build executables (release + debug)
+      - name: Build executables (onedir)
         run: uv run pyinstaller layrd_sync.spec
 
       - name: Sync version to installer script
@@ -36,17 +36,21 @@ jobs:
       - name: Build installer
         run: iscc installer.iss
 
-      - name: Upload release exe
+      - name: Zip dist folder for auto-update
+        shell: pwsh
+        run: Compress-Archive -Path "dist/LayrdSync/*" -DestinationPath "dist/LayrdSync.zip"
+
+      - name: Upload release folder
         uses: actions/upload-artifact@v4
         with:
           name: LayrdSync-windows
-          path: dist/LayrdSync.exe
+          path: dist/LayrdSync/
 
-      - name: Upload debug exe
+      - name: Upload zip
         uses: actions/upload-artifact@v4
         with:
-          name: LayrdSyncDebug-windows
-          path: dist/LayrdSyncDebug.exe
+          name: LayrdSync-zip
+          path: dist/LayrdSync.zip
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
@@ -58,12 +62,14 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
-          $exe_hash = (Get-FileHash dist/LayrdSync.exe -Algorithm SHA256).Hash.ToLower()
+          $zip_hash = (Get-FileHash dist/LayrdSync.zip -Algorithm SHA256).Hash.ToLower()
+          $exe_hash = (Get-FileHash dist/LayrdSync/LayrdSync.exe -Algorithm SHA256).Hash.ToLower()
           $setup_file = Get-ChildItem installer_output/LayrdSyncSetup-*.exe | Select-Object -First 1
           $setup_hash = (Get-FileHash $setup_file.FullName -Algorithm SHA256).Hash.ToLower()
           $body = @"
           ## SHA-256 Checksums
           ``````
+          LayrdSync.zip: $zip_hash
           LayrdSync.exe: $exe_hash
           $($setup_file.Name): $setup_hash
           ``````
@@ -77,8 +83,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/LayrdSync.exe
-            dist/LayrdSyncDebug.exe
+            dist/LayrdSync.zip
+            dist/LayrdSync/LayrdSync.exe
+            dist/LayrdSync/LayrdSyncDebug.exe
             installer_output/LayrdSyncSetup-*.exe
           generate_release_notes: true
           body: ${{ env.RELEASE_BODY }}
