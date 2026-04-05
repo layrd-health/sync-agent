@@ -31,6 +31,8 @@ class UploadedFile:
     uploaded_at: float
     upload_status: str  # "uploaded", "failed", "pending"
     remote_id: str | None  # ID returned by the server after upload
+    retry_count: int = 0
+    next_retry_at: float | None = None
 
 
 def _get_db_path() -> Path:
@@ -90,6 +92,16 @@ class Database:
                 ON uploaded_files(upload_status);
         """)
         self.conn.commit()
+        # Add retry columns (idempotent for existing databases)
+        for col, typedef in [
+            ("retry_count", "INTEGER NOT NULL DEFAULT 0"),
+            ("next_retry_at", "REAL"),
+        ]:
+            try:
+                self.conn.execute(f"ALTER TABLE uploaded_files ADD COLUMN {col} {typedef}")
+                self.conn.commit()
+            except sqlite3.OperationalError:
+                pass  # column already exists
 
     # ── Config ──────────────────────────────────────────────────────
 
@@ -193,16 +205,21 @@ class Database:
         modified_at: float,
         upload_status: str = "uploaded",
         remote_id: str | None = None,
+        retry_count: int = 0,
+        next_retry_at: float | None = None,
     ):
         self.conn.execute(
             "INSERT INTO uploaded_files "
-            "(folder_id, file_path, file_hash, file_size, modified_at, uploaded_at, upload_status, remote_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+            "(folder_id, file_path, file_hash, file_size, modified_at, uploaded_at, "
+            "upload_status, remote_id, retry_count, next_retry_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(folder_id, file_path) DO UPDATE SET "
             "file_hash=excluded.file_hash, file_size=excluded.file_size, "
             "modified_at=excluded.modified_at, uploaded_at=excluded.uploaded_at, "
-            "upload_status=excluded.upload_status, remote_id=excluded.remote_id",
-            (folder_id, file_path, file_hash, file_size, modified_at, time.time(), upload_status, remote_id),
+            "upload_status=excluded.upload_status, remote_id=excluded.remote_id, "
+            "retry_count=excluded.retry_count, next_retry_at=excluded.next_retry_at",
+            (folder_id, file_path, file_hash, file_size, modified_at, time.time(),
+             upload_status, remote_id, retry_count, next_retry_at),
         )
         self.conn.commit()
 
@@ -235,6 +252,16 @@ class Database:
         cur = self.conn.execute(query, params)
         self.conn.commit()
         return cur.rowcount
+
+    def get_retryable_files(self) -> list[UploadedFile]:
+        """Return failed files whose next_retry_at has passed (ready for retry)."""
+        now = time.time()
+        rows = self.conn.execute(
+            "SELECT * FROM uploaded_files "
+            "WHERE upload_status = 'failed' AND next_retry_at IS NOT NULL AND next_retry_at <= ?",
+            (now,),
+        ).fetchall()
+        return [self._row_to_file(r) for r in rows]
 
     def get_uploaded_files(self) -> list[UploadedFile]:
         """Return all files with upload_status='uploaded' (candidates for cleanup)."""
@@ -281,6 +308,8 @@ class Database:
             uploaded_at=row["uploaded_at"],
             upload_status=row["upload_status"],
             remote_id=row["remote_id"],
+            retry_count=row["retry_count"],
+            next_retry_at=row["next_retry_at"],
         )
 
     def close(self):

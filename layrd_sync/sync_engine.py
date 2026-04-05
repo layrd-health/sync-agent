@@ -3,6 +3,7 @@
 import logging
 import shutil
 import threading
+import time
 from pathlib import Path
 
 from .database import Database
@@ -11,7 +12,16 @@ from .uploader import Uploader, UploadResult
 
 RECYCLE_FOLDER_NAME = "layrd_recycle"
 
+# Exponential backoff schedule (seconds): 30s, 1m, 2m, 5m, 10m, then cap at 10m
+RETRY_BACKOFF_SECONDS = [30, 60, 120, 300, 600]
+
 logger = logging.getLogger(__name__)
+
+
+def _retry_delay(retry_count: int) -> float:
+    """Return backoff delay in seconds for the given retry count."""
+    idx = min(retry_count, len(RETRY_BACKOFF_SECONDS) - 1)
+    return RETRY_BACKOFF_SECONDS[idx]
 
 
 class SyncEngine:
@@ -23,14 +33,31 @@ class SyncEngine:
         self.uploader = uploader
         self._lock = threading.Lock()
         self._running = False
+        self._paused = False
         self.last_reconcile: dict | None = None
 
         self.on_file_uploaded: list[callable] = []
         self.on_file_failed: list[callable] = []
         self.on_scan_complete: list[callable] = []
 
+    @property
+    def paused(self) -> bool:
+        return self._paused
+
+    def pause(self):
+        self._paused = True
+        logger.info("Sync engine paused")
+
+    def resume(self):
+        self._paused = False
+        logger.info("Sync engine resumed")
+
     def run_sync_cycle(self):
         """One full scan-and-upload cycle across all enabled folders."""
+        if self._paused:
+            logger.debug("Sync cycle skipped (paused)")
+            return
+
         if not self._lock.acquire(blocking=False):
             logger.debug("Sync cycle already running, skipping")
             return
@@ -49,6 +76,11 @@ class SyncEngine:
                 else:
                     failed_count += 1
 
+            # Retry failed files whose backoff has elapsed
+            retried, retry_failed = self._retry_failed_files()
+            uploaded_count += retried
+            failed_count += retry_failed
+
             for cb in self.on_scan_complete:
                 try:
                     cb(uploaded_count, failed_count)
@@ -62,7 +94,7 @@ class SyncEngine:
             self._running = False
             self._lock.release()
 
-    def _upload_file(self, nf: NewFile) -> UploadResult:
+    def _upload_file(self, nf: NewFile, retry_count: int = 0) -> UploadResult:
         rel_path = str(nf.path.relative_to(Path(nf.folder.path)))
 
         self.db.record_upload(
@@ -93,6 +125,8 @@ class SyncEngine:
                 except Exception:
                     logger.exception("Error in on_file_uploaded callback")
         else:
+            new_retry_count = retry_count + 1
+            delay = _retry_delay(new_retry_count)
             self.db.record_upload(
                 folder_id=nf.folder.id,
                 file_path=rel_path,
@@ -100,8 +134,13 @@ class SyncEngine:
                 file_size=nf.file_size,
                 modified_at=nf.modified_at,
                 upload_status="failed",
+                retry_count=new_retry_count,
+                next_retry_at=time.time() + delay,
             )
-            logger.warning("Upload failed: %s/%s — %s", nf.folder.label, rel_path, result.error)
+            logger.warning(
+                "Upload failed: %s/%s — %s (retry #%d in %ds)",
+                nf.folder.label, rel_path, result.error, new_retry_count, delay,
+            )
             for cb in self.on_file_failed:
                 try:
                     cb(nf, result)
@@ -109,6 +148,46 @@ class SyncEngine:
                     logger.exception("Error in on_file_failed callback")
 
         return result
+
+    def _retry_failed_files(self) -> tuple[int, int]:
+        """Retry failed files whose backoff has elapsed. Returns (succeeded, failed)."""
+        retryable = self.db.get_retryable_files()
+        if not retryable:
+            return 0, 0
+
+        folders_by_id = {}
+        for folder in self.db.get_folders(enabled_only=False):
+            folders_by_id[folder.id] = folder
+
+        succeeded = 0
+        failed = 0
+        for uf in retryable:
+            folder = folders_by_id.get(uf.folder_id)
+            if not folder:
+                continue
+            file_path = Path(folder.path) / uf.file_path
+            if not file_path.exists():
+                # File was removed — clean up the record
+                self.db.reset_uploaded_file(uf.id)
+                continue
+
+            nf = NewFile(
+                folder=folder,
+                path=file_path,
+                file_hash=uf.file_hash,
+                file_size=uf.file_size,
+                modified_at=uf.modified_at,
+            )
+            logger.info("Retrying (attempt #%d): %s/%s", uf.retry_count + 1, folder.label, uf.file_path)
+            result = self._upload_file(nf, retry_count=uf.retry_count)
+            if result.success:
+                succeeded += 1
+            else:
+                failed += 1
+
+        if succeeded or failed:
+            logger.info("Retry results: %d succeeded, %d failed", succeeded, failed)
+        return succeeded, failed
 
     def _run_reconcile_cycle(self):
         """Report current inbox contents to the backend for reconciliation."""
@@ -191,11 +270,11 @@ class SyncEngine:
             logger.info("Cleanup: moved %d file(s) to recycle", cleaned_count)
 
     def retry_failed(self) -> int:
-        """Reset all failed uploads and re-run a sync cycle.
+        """Reset all failed uploads for immediate retry.
         Returns the number of failed files queued for retry."""
         count = self.db.reset_failed_files()
         if count > 0:
-            logger.info("Reset %d failed file(s) for retry", count)
+            logger.info("Force-reset %d failed file(s) for immediate retry", count)
             self.run_sync_cycle()
         else:
             logger.info("No failed files to retry")

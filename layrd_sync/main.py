@@ -29,18 +29,14 @@ def setup_logging(verbose: bool = False):
     )
 
 
-def _setup_remote_logging(db: Database, api_url: str, api_key: str | None):
-    """Attach the remote log handler to the root logger."""
-    from .remote_logging import RemoteLogHandler
-    endpoint = f"{api_url.rstrip('/')}/api/sync-agent/logs"
-    handler = RemoteLogHandler(
-        endpoint=endpoint,
-        data_dir=db.db_path.parent,
-        api_key=api_key,
-    )
+def _setup_heartbeat(db: Database, api_url: str, api_key: str | None):
+    """Create heartbeat client and attach its log handler."""
+    from .heartbeat import HeartbeatClient, HeartbeatLogHandler
+    heartbeat = HeartbeatClient(db=db, api_url=api_url, api_key=api_key)
+    handler = HeartbeatLogHandler(heartbeat)
     handler.setFormatter(logging.Formatter("%(message)s"))
     logging.getLogger("layrd_sync").addHandler(handler)
-    return handler
+    return heartbeat, handler
 
 
 def _fetch_remote_config(db: Database, api_url: str, api_key: str | None) -> tuple[str, str | None]:
@@ -153,12 +149,45 @@ def main():
     # Check for remote config override (server can redirect agents to a new URL)
     api_url, api_key = _fetch_remote_config(db, api_url, api_key)
 
-    remote_log_handler = _setup_remote_logging(db, api_url, api_key)
+    heartbeat, log_handler = _setup_heartbeat(db, api_url, api_key)
 
     location = db.get_config("location", "")
     uploader = Uploader(base_url=api_url, api_key=api_key, location=location)
     engine = SyncEngine(db=db, uploader=uploader)
     updater = Updater()
+
+    # Wire heartbeat status and command handlers
+    def _get_status():
+        stats = db.get_upload_stats()
+        folders = db.get_folders(enabled_only=False)
+        return {
+            "sync_status": "paused" if engine.paused else "active",
+            "upload_stats": stats,
+            "watched_folders": [
+                {"path": f.path, "label": f.label, "enabled": f.enabled}
+                for f in folders
+            ],
+            "last_reconcile": engine.last_reconcile,
+            "poll_interval": args.poll_interval,
+        }
+
+    def _handle_command(command: str, params: dict | None):
+        if command == "pause":
+            engine.pause()
+        elif command == "resume":
+            engine.resume()
+        elif command == "retry":
+            engine.retry_failed()
+        elif command == "set_config":
+            if params:
+                for key, value in params.items():
+                    db.set_config(key, str(value))
+                    logger.info("Remote config set: %s = %s", key, value)
+        else:
+            logger.warning("Unknown command: %s", command)
+
+    heartbeat.get_status = _get_status
+    heartbeat.on_command = _handle_command
 
     folders = db.get_folders(enabled_only=True)
     if not folders:
@@ -184,6 +213,13 @@ def main():
         max_instances=1,
     )
     scheduler.add_job(
+        heartbeat.send_heartbeat,
+        "interval",
+        seconds=30,
+        id="heartbeat",
+        max_instances=1,
+    )
+    scheduler.add_job(
         lambda: _check_and_apply_update(updater),
         "interval",
         seconds=DEFAULT_UPDATE_CHECK_INTERVAL,
@@ -193,6 +229,7 @@ def main():
     logger.info("Scheduler started (poll every %ds)", args.poll_interval)
 
     engine.run_sync_cycle()
+    heartbeat.send_heartbeat()
 
     if args.headless:
         logger.info("Running in headless mode. Ctrl+C to stop.")
@@ -214,10 +251,10 @@ def main():
 
     logger.info("Shutting down...")
     scheduler.shutdown(wait=False)
+    heartbeat.send_heartbeat()  # final heartbeat
     uploader.close()
     updater.close()
-    if remote_log_handler:
-        remote_log_handler.close()
+    heartbeat.close()
     db.close()
 
 
